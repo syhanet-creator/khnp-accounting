@@ -2647,7 +2647,7 @@ function ContractScreen({ data, onAdd, onDelete, onUpdateContract }) {
   );
 }
 
-function SettingsScreen({ data, onImport, onUpdateOrg, saveStatus }) {
+function SettingsScreen({ data, onImport, onUpdateOrg, saveStatus, menuClickTotal }) {
   const fileRef = useRef(null);
   const [editingOrg, setEditingOrg] = useState(false);
   const [orgType, setOrgType] = useState(data.orgType);
@@ -2716,7 +2716,9 @@ function SettingsScreen({ data, onImport, onUpdateOrg, saveStatus }) {
         React.createElement("li", null, "제38조: 추정가격 5,000만원 이상은 경쟁입찰 원칙"),
         React.createElement("li", null, "제44조: 고정자산은 취득가 50만원 이상, 내용연수 1년 이상 물품"),
       )
-    )
+    ),
+    React.createElement("div", { style: { textAlign: "center", marginTop: 4, fontSize: 11.5, color: "var(--ink-soft)" } },
+      `메뉴 이용 ${fmtNum(menuClickTotal)}회`)
   );
 }
 
@@ -2777,6 +2779,7 @@ function App() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState("saved"); // 'saved' | 'error'
   const [lastSavedAt, setLastSavedAt] = useState(null);
+  const [menuClickTotal, setMenuClickTotal] = useState(0); // 사이드바 메뉴 클릭 수 합계(MongoDB 집계)
   const isMobile = useIsMobile();
 
   // 데이터가 바뀔 때마다 자동으로 이 PC의 브라우저 저장소에 저장한다.
@@ -2789,6 +2792,24 @@ function App() {
       setSaveStatus("error");
     }
   }, [data]);
+
+  // 페이지가 열릴 때 모든 메뉴(링크)의 현재 클릭 수를 한 번에 가져와 합계를 표시한다.
+  // 값을 받기 전에는 0회로 보이고, 받으면 실제 값으로 갱신된다. 실패해도 화면 사용에는 지장이 없다.
+  useEffect(() => {
+    fetch("/api/clicks")
+      .then(r => r.ok ? r.json() : null)
+      .then(json => { if (json && typeof json.total === "number") setMenuClickTotal(json.total); })
+      .catch(() => {});
+  }, []);
+  // 메뉴를 누를 때마다 그 메뉴의 클릭 수를 1 늘린다(화면은 바로, 서버 기록은 백그라운드로).
+  function trackMenuClick(linkId) {
+    setMenuClickTotal(n => n + 1);
+    fetch("/api/clicks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ linkId }),
+    }).catch(() => {});
+  }
 
   const accountOptions = FLAT_ACCOUNTS.map(a => ({
     value: a.id,
@@ -2904,6 +2925,7 @@ function App() {
     setNav(key);
     setMoreOpen(false);
     if (key === "voucher" && voucher) setEditingVoucher(voucher);
+    trackMenuClick(key);
   }
 
   const navLabel = NAV_ITEMS.find(n => n.key === nav)?.label || "";
@@ -2925,7 +2947,7 @@ function App() {
       React.createElement("nav", { className: "nav-group" },
         NAV_ITEMS.map(item => React.createElement("div", {
           key: item.key, className: "nav-item" + (nav === item.key ? " active" : ""),
-          onClick: () => { setNav(item.key); if (item.key !== "voucher") setEditingVoucher(null); }
+          onClick: () => goNav(item.key)
         }, React.createElement(Icon, { name: item.icon, size: 17 }), item.label))
       ),
       React.createElement("div", { className: "sidebar-footer" }, `${data.currentFY}회계연도 · 복식부기`)
@@ -2963,7 +2985,7 @@ function App() {
         nav === "asset" && React.createElement(AssetScreen, { data, onAdd: addAsset, onDelete: deleteAsset }),
         nav === "contract" && React.createElement(ContractScreen, { data, onAdd: addContract, onDelete: deleteContract, onUpdateContract: updateContract }),
         nav === "yearend" && React.createElement(YearEndScreen, { data, onCloseYear: closeYear, onNavBudget: () => setNav("budget") }),
-        nav === "settings" && React.createElement(SettingsScreen, { data, onImport: handleImport, onUpdateOrg: updateOrgSettings, saveStatus }),
+        nav === "settings" && React.createElement(SettingsScreen, { data, onImport: handleImport, onUpdateOrg: updateOrgSettings, saveStatus, menuClickTotal }),
       )
     ),
 
@@ -2972,7 +2994,7 @@ function App() {
         const item = NAV_ITEMS.find(n => n.key === key);
         return React.createElement("button", {
           key: key, className: "tab-item" + (nav === key ? " active" : ""),
-          onClick: () => { setNav(key); setMoreOpen(false); if (key !== "voucher") setEditingVoucher(null); }
+          onClick: () => goNav(key)
         }, React.createElement(Icon, { name: item.icon, size: 21 }), React.createElement("span", null, item.label));
       }),
       React.createElement("button", {
@@ -2983,7 +3005,7 @@ function App() {
 
     isMobile && React.createElement(MoreSheet, {
       open: moreOpen, onClose: () => setMoreOpen(false), items: moreItems, activeKey: nav,
-      onSelect: key => { setNav(key); setMoreOpen(false); if (key !== "voucher") setEditingVoucher(null); },
+      onSelect: key => goNav(key),
       fy: data.currentFY
     })
   );
